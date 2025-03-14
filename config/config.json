@@ -1,0 +1,144 @@
+{
+  "sip": {
+    "host": "0.0.0.0",
+    "port": 5060,
+    "enable_udp": true,
+    "enable_tcp": true
+  },
+  "grpc": {
+    "endpoints": [
+      {
+        "name": "example",
+        "host": "localhost",
+        "port": 50051,
+        "service": "Example",
+        "use_tls": false
+      }
+    ],
+    "proto_path": "protos"
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "mapping": {
+    "sip_to_grpc": {
+      "INVITE": {
+        "endpoint": "example",
+        "method": "Call",
+        "fields": {
+          "request.caller": {
+            "transformer": "extract_header",
+            "header_name": "From"
+          },
+          "request.callee": {
+            "transformer": "extract_header",
+            "header_name": "To"
+          },
+          "request.call_id": {
+            "transformer": "extract_header",
+            "header_name": "Call-ID"
+          }
+        }
+      },
+      "REGISTER": {
+        "endpoint": "example",
+        "method": "Register",
+        "fields": {
+          "request.user": {
+            "transformer": "extract_header",
+            "header_name": "From"
+          },
+          "request.expires": {
+            "transformer": "extract_header",
+            "header_name": "Expires",
+            "default": "3600"
+          }
+        }
+      },
+      "BYE": {
+        "endpoint": "example",
+        "method": "EndCall",
+        "fields": {
+          "request.call_id": {
+            "transformer": "extract_header",
+            "header_name": "Call-ID"
+          }
+        }
+      },
+      "MESSAGE": {
+        "endpoint": "example",
+        "method": "SendMessage",
+        "fields": {
+          "request.from": {
+            "transformer": "extract_header",
+            "header_name": "From"
+          },
+          "request.to": {
+            "transformer": "extract_header",
+            "header_name": "To"
+          },
+          "request.content": {
+            "field": "body"
+          }
+        }
+      },
+      "DEFAULT": {
+        "endpoint": "example",
+        "method": "Process",
+        "fields": {
+          "request.method": {
+            "field": "method"
+          },
+          "request.uri": {
+            "field": "uri"
+          },
+          "request.headers": {
+            "field": "headers"
+          }
+        }
+      }
+    },
+    "grpc_to_sip": {
+      "example.Call": {
+        "status_code": 200,
+        "reason": "OK",
+        "headers": {
+          "Content-Type": {
+            "value": "application/json"
+          },
+          "Contact": {
+            "transformer": "template",
+            "template": "<sip:{data.service}@{data.host}:{data.port}>"
+          }
+        },
+        "body": {
+          "transformer": "template",
+          "template": "{\n  \"call_id\": \"{data.call_id}\",\n  \"status\": \"{data.status}\"\n}"
+        }
+      },
+      "example.Register": {
+        "status_code": 200,
+        "reason": "OK",
+        "headers": {
+          "Expires": {
+            "field": "data.expires"
+          }
+        }
+      },
+      "DEFAULT": {
+        "status_code": 200,
+        "reason": "OK",
+        "headers": {
+          "Content-Type": {
+            "value": "application/json"
+          }
+        },
+        "body": {
+          "transformer": "template",
+          "template": "{\n  \"result\": \"success\"\n}"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIP to gRPC Gateway</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    header {
+      background-color: #2196f3;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+    }
+    .panel {
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      margin-right: 0.5rem;
+    }
+    .success {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #2e7d32;
+    }
+    .error {
+      background-color: #ffebee;
+      color: #c62828;
+      border: 1px solid #c62828;
+    }
+    button {
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+    button:disabled {
+      background-color: #b0b0b0;
+      cursor: not-allowed;
+    }
+    button.recording {
+      background-color: #f44336;
+    }
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 200px;
+    }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #2196f3;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error-message {
+      background-color: #ffebee;
+      color: #c62828;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border-left: 4px solid #c62828;
+    }
+    .grid-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .stats {
+      text-align: center;
+    }
+    .stats h3 {
+      margin-bottom: 0.5rem;
+      color: #666;
+    }
+    .stats .number {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #2196f3;
+    }
+    .stats .details {
+      color: #666;
+      font-size: 0.9rem;
+    }
+    .audio-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .audio-status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .visualizer {
+      width: 100%;
+      height: 60px;
+      margin-top: 0.5rem;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .visualizer-canvas {
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* Animation styles */
+    .protocol-arrow {
+      transition: background-color 0.3s ease-in-out;
+    }
+    .protocol-arrow > div {
+      transition: border-left-color 0.3s ease-in-out;
+    }
+    .audio-packet {
+      transition: left 1s ease-in-out, top 1s ease-in-out;
+    }
+    #mic-icon, #sip-icon, #grpc-icon, #speaker-icon {
+      transition: transform 0.3s ease-in-out;
+    }
+    
+    /* Notification bubble for permissions prompt */
+    .permission-notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #2196f3;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      z-index: 1000;
+      animation: fadein 0.5s;
+      max-width: 400px;
+      text-align: center;
+    }
+    
+    @keyframes fadein {
+      from { opacity: 0; transform: translate(-50%, -20px); }
+      to   { opacity: 1; transform: translate(-50%, 0); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SIP to gRPC Gateway</h1>
+    <button onclick="fetchDashboardData()">Refresh</button>
+  </header>
+
+  <div class="container">
+    <div id="error-container"></div>
+    
+    <div id="loading" class="loading">
+      <div class="loader"></div>
+    </div>
+    
+    <div id="dashboard-content" style="display: none;">
+      <h2>Dashboard</h2>
+      
+      <!-- Protocol Flow Visualization Card -->
+      <div class="card" style="grid-column: 1 / -1; margin-bottom: 1rem;">
+        <h2>Protocol Flow Visualization</h2>
+        <div id="protocol-flow-container" style="position: relative; height: 180px; background: #f8f9fa; border-radius: 8px; padding: 10px; margin-top: 0.5rem;">
+          <!-- Client Box -->
+          <div style="position: absolute; left: 5%; top: 50%; transform: translateY(-50%); width: 15%; height: 120px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+            <div style="font-weight: bold;">Client</div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">Browser</div>
+            <div id="mic-icon" style="margin-top: 10px; font-size: 24px;">🎤</div>
+          </div>
+          
+          <!-- SIP Server Box -->
+          <div style="position: absolute; left: 30%; top: 50%; transform: translateY(-50%); width: 15%; height: 120px; background: #fff3e0; border: 2px solid #ff9800; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+            <div style="font-weight: bold;">SIP Server</div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">UDP/5060</div>
+            <div id="sip-icon" style="margin-top: 10px; font-size: 24px;">📞</div>
+          </div>
+          
+          <!-- gRPC Server Box -->
+          <div style="position: absolute; left: 55%; top: 50%; transform: translateY(-50%); width: 15%; height: 120px; background: #e8f5e9; border: 2px solid #4caf50; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+            <div style="font-weight: bold;">gRPC Server</div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">TCP/50051</div>
+            <div id="grpc-icon" style="margin-top: 10px; font-size: 24px;">🌐</div>
+          </div>
+          
+          <!-- Audio output Box -->
+          <div style="position: absolute; left: 80%; top: 50%; transform: translateY(-50%); width: 15%; height: 120px; background: #e3f2fd; border: 2px solid #2196f3; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+            <div style="font-weight: bold;">Playback</div>
+            <div style="font-size: 0.8rem; margin-top: 5px;">Browser</div>
+            <div id="speaker-icon" style="margin-top: 10px; font-size: 24px;">🔊</div>
+          </div>
+          
+          <!-- Animated connection arrows -->
+          <div id="client-to-sip-arrow" class="protocol-arrow" style="position: absolute; top: 45%; left: 20%; width: 10%; height: 5px; background-color: #aaa; transform-origin: left center; display: none;">
+            <div style="position: absolute; right: -10px; top: -5px; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 10px solid #aaa;"></div>
+          </div>
+          
+          <div id="sip-to-grpc-arrow" class="protocol-arrow" style="position: absolute; top: 45%; left: 45%; width: 10%; height: 5px; background-color: #aaa; transform-origin: left center; display: none;">
+            <div style="position: absolute; right: -10px; top: -5px; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 10px solid #aaa;"></div>
+          </div>
+          
+          <div id="grpc-to-sip-arrow" class="protocol-arrow" style="position: absolute; top: 55%; left: 55%; width: 10%; height: 5px; background-color: #aaa; transform-origin: right center; display: none; transform: rotate(180deg);">
+            <div style="position: absolute; right: -10px; top: -5px; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 10px solid #aaa;"></div>
+          </div>
+          
+          <div id="sip-to-client-arrow" class="protocol-arrow" style="position: absolute; top: 55%; left: 30%; width: 10%; height: 5px; background-color: #aaa; transform-origin: right center; display: none; transform: rotate(180deg);">
+            <div style="position: absolute; right: -10px; top: -5px; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 10px solid #aaa;"></div>
+          </div>
+          
+          <!-- Audio Data Packet Indicators -->
+          <div id="audio-packet-1" class="audio-packet" style="position: absolute; width: 20px; height: 20px; background-color: #ff5722; border-radius: 50%; display: none; top: 43%; left: 21%;"></div>
+          <div id="audio-packet-2" class="audio-packet" style="position: absolute; width: 20px; height: 20px; background-color: #ff5722; border-radius: 50%; display: none; top: 43%; left: 46%;"></div>
+          <div id="audio-packet-3" class="audio-packet" style="position: absolute; width: 20px; height: 20px; background-color: #00bcd4; border-radius: 50%; display: none; top: 57%; left: 46%;"></div>
+          <div id="audio-packet-4" class="audio-packet" style="position: absolute; width: 20px; height: 20px; background-color: #00bcd4; border-radius: 50%; display: none; top: 57%; left: 21%;"></div>
+          
+          <!-- Protocol labels -->
+          <div style="position: absolute; top: 32%; left: 21%; font-size: 0.8rem; color: #666;">SIP Request</div>
+          <div style="position: absolute; top: 32%; left: 46%; font-size: 0.8rem; color: #666;">gRPC Request</div>
+          <div style="position: absolute; top: 63%; left: 46%; font-size: 0.8rem; color: #666;">gRPC Response</div>
+          <div style="position: absolute; top: 63%; left: 21%; font-size: 0.8rem; color: #666;">SIP Response</div>
+          
+          <!-- Status badge when no audio is flowing -->
+          <div id="flow-status" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            Ready for audio transmission
+          </div>
+        </div>
+      </div>
+      
+      <div class="card-grid">
+        <!-- Gateway Status Card -->
+        <div class="card">
+          <h2>Gateway Status</h2>
+          <div id="gateway-status"></div>
+          <div style="margin-top: 1rem;">
+            <button disabled id="gateway-toggle-btn">Stop Gateway</button>
+          </div>
+        </div>
+        
+        <!-- SIP Server Card -->
+        <div class="card">
+          <h2>SIP Server</h2>
+          <div id="sip-details"></div>
+        </div>
+        
+        <!-- gRPC Client Card -->
+        <div class="card">
+          <h2>gRPC Client</h2>
+          <div id="grpc-status"></div>
+        </div>
+        
+        <!-- Audio Card -->
+        <div class="card">
+          <h2>Voice Communication</h2>
+          <div id="audio-status" class="audio-status">Ready to speak</div>
+          <div class="visualizer">
+            <canvas id="audio-visualizer" class="visualizer-canvas"></canvas>
+          </div>
+          <div class="audio-controls">
+            <button id="speak-btn">Press to Speak</button>
+            <button id="stop-btn" disabled>Stop</button>
+          </div>
+        </div>
+        
+        <!-- Trace/PCAP Card -->
+        <div class="card">
+          <h2>SIP/gRPC Tracing</h2>
+          <div id="trace-status" class="audio-status">No active trace</div>
+          <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button id="trace-start-btn">Start Trace</button>
+            <button id="trace-stop-btn" disabled>Stop Trace</button>
+            <button id="trace-download-btn" disabled>Download PCAP</button>
+          </div>
+          <div id="trace-info" style="margin-top: 1rem; font-size: 0.9rem;">
+            <p>Traces capture the SIP and gRPC protocol exchanges during audio transmission.</p>
+            <p>The PCAP file can be opened in Wireshark to analyze the protocol flow.</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <h2>Configuration Summary</h2>
+        <hr>
+        <div class="grid-row">
+          <div class="stats">
+            <h3>Endpoints</h3>
+            <div id="endpoints-count" class="number">0</div>
+            <div id="endpoints-list" class="details">None configured</div>
+          </div>
+          
+          <div class="stats">
+            <h3>SIP to gRPC Mappings</h3>
+            <div id="sip-grpc-count" class="number">0</div>
+          </div>
+          
+          <div class="stats">
+            <h3>gRPC to SIP Mappings</h3>
+            <div id="grpc-sip-count" class="number">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API Base URL - adjust this to point to your backend
+    const API_BASE_URL = window.location.origin;
+    
+    // Function to fetch dashboard data
+    async function fetchDashboardData() {
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('dashboard-content').style.display = 'none';
+      document.getElementById('error-container').innerHTML = '';
+      
+      try {
+        // Fetch status
+        const statusResponse = await fetch(`${API_BASE_URL}/status`);
+        if (!statusResponse.ok) {
+          throw new Error(`API error: ${statusResponse.status}`);
+        }
+        const status = await statusResponse.json();
+        
+        // Fetch config
+        const configResponse = await fetch(`${API_BASE_URL}/config`);
+        if (!configResponse.ok) {
+          throw new Error(`API error: ${configResponse.status}`);
+        }
+        const config = await configResponse.json();
+        
+        // Update the UI
+        updateDashboard(status, config);
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = 'block';
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error-container').innerHTML = `
+          <div class="error-message">
+            Failed to load gateway status. Please ensure the backend is running at ${API_BASE_URL}.<br>
+            Error: ${error.message}
+          </div>
+        `;
+      }
+    }
+    
+    // Function to update the dashboard UI
+    function updateDashboard(status, config) {
+      // Gateway status
+      const gatewayStatusEl = document.getElementById('gateway-status');
+      if (status.running) {
+        gatewayStatusEl.innerHTML = '<span class="chip success">✓ Running</span>';
+        document.getElementById('gateway-toggle-btn').textContent = 'Stop Gateway';
+      } else {
+        gatewayStatusEl.innerHTML = '<span class="chip error">✗ Stopped</span>';
+        document.getElementById('gateway-toggle-btn').textContent = 'Start Gateway';
+      }
+      
+      // SIP Server details
+      const sipDetailsEl = document.getElementById('sip-details');
+      sipDetailsEl.innerHTML = `
+        <div>Host: ${status.sip_server.host || 'N/A'}</div>
+        <div>Port: ${status.sip_server.port || 'N/A'}</div>
+        <div style="margin-top: 0.5rem;">
+          ${status.sip_server.udp_enabled ? '<span class="chip success">UDP</span>' : '<span class="chip">UDP</span>'}
+          ${status.sip_server.tcp_enabled ? '<span class="chip success">TCP</span>' : '<span class="chip">TCP</span>'}
+        </div>
+      `;
+      
+      // gRPC Client status
+      const grpcStatusEl = document.getElementById('grpc-status');
+      if (status.grpc_client.connected) {
+        grpcStatusEl.innerHTML = '<span class="chip success">✓ Connected</span>';
+      } else {
+        grpcStatusEl.innerHTML = '<span class="chip error">✗ Disconnected</span>';
+      }
+      
+      // Configuration summary
+      const endpoints = config.grpc?.endpoints || [];
+      document.getElementById('endpoints-count').textContent = endpoints.length;
+      document.getElementById('endpoints-list').textContent = 
+        endpoints.length > 0 ? endpoints.map(e => e.name).join(', ') : 'None configured';
+      
+      const sipMappings = Object.keys(config.mapping?.sip_to_grpc || {}).length;
+      document.getElementById('sip-grpc-count').textContent = sipMappings;
+      
+      const grpcMappings = Object.keys(config.mapping?.grpc_to_sip || {}).length;
+      document.getElementById('grpc-sip-count').textContent = grpcMappings;
+    }
+    
+    // Audio and Tracing functionality
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchDashboardData();
+      setupAudioFunctionality();
+      setupTracingFunctionality();
+      
+      // Initialize the protocol animation with a delay to ensure DOM is fully loaded
+      setTimeout(() => {
+        try {
+          protocolAnimation.init();
+          console.log("Protocol animation initialized successfully");
+        } catch (error) {
+          console.error("Protocol animation initialization error:", error);
+        }
+      }, 1000);
+    });
+    
+    // Global trace state
+    let activeTraceId = null;
+    let latestTraceId = null;
+    
+    function setupAudioFunctionality() {
+      const speakBtn = document.getElementById('speak-btn');
+      const stopBtn = document.getElementById('stop-btn');
+      const audioStatus = document.getElementById('audio-status');
+      const visualizer = document.getElementById('audio-visualizer');
+      const visualizerCtx = visualizer.getContext('2d');
+      
+      // Set canvas size
+      visualizer.width = visualizer.offsetWidth;
+      visualizer.height = visualizer.offsetHeight;
+      
+      // Audio contexts and streams
+      let audioContext;
+      let mediaStream;
+      let mediaRecorder;
+      let audioChunks = [];
+      let loopbackAudio = [];
+      let audioPlayer = new Audio();
+      let analyser;
+      let dataArray;
+      let animationFrameId;
+      
+      // Draw the visualizer
+      function drawVisualizer() {
+        animationFrameId = requestAnimationFrame(drawVisualizer);
+        
+        if (analyser) {
+          analyser.getByteTimeDomainData(dataArray);
+          
+          visualizerCtx.fillStyle = 'rgb(245, 245, 245)';
+          visualizerCtx.fillRect(0, 0, visualizer.width, visualizer.height);
+          
+          visualizerCtx.lineWidth = 2;
+          visualizerCtx.strokeStyle = 'rgb(33, 150, 243)';
+          visualizerCtx.beginPath();
+          
+          const sliceWidth = visualizer.width / dataArray.length;
+          let x = 0;
+          
+          for (let i = 0; i < dataArray.length; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = v * visualizer.height / 2;
+            
+            if (i === 0) {
+              visualizerCtx.moveTo(x, y);
+            } else {
+              visualizerCtx.lineTo(x, y);
+            }
+            
+            x += sliceWidth;
+          }
+          
+          visualizerCtx.lineTo(visualizer.width, visualizer.height / 2);
+          visualizerCtx.stroke();
+        }
+      }
+      
+      // Create animation controller for protocol visualization
+      const protocolAnimation = {
+        // Animation state
+        active: false,
+        initialized: false,
+        arrowSequence: [],
+        packetSequence: [],
+        currentStep: 0,
+        animationInterval: null,
+        packetSpeed: 1000, // milliseconds to travel between nodes
+        
+        // Safe reference to flow status element - helps avoid errors
+        getFlowStatus() {
+          const elem = document.getElementById('flow-status');
+          if (!elem) {
+            console.warn("Flow status element not found");
+            return {
+              textContent: "",
+              style: { display: "none" }
+            };
+          }
+          return elem;
+        },
+        
+        // Initialize the animation
+        init() {
+          // Get all the elements
+          try {
+            this.arrows = {
+              clientToSip: document.getElementById('client-to-sip-arrow'),
+              sipToGrpc: document.getElementById('sip-to-grpc-arrow'),
+              grpcToSip: document.getElementById('grpc-to-sip-arrow'),
+              sipToClient: document.getElementById('sip-to-client-arrow')
+            };
+            
+            this.packets = {
+              packet1: document.getElementById('audio-packet-1'),
+              packet2: document.getElementById('audio-packet-2'),
+              packet3: document.getElementById('audio-packet-3'),
+              packet4: document.getElementById('audio-packet-4')
+            };
+            
+            this.components = {
+              mic: document.getElementById('mic-icon'),
+              sip: document.getElementById('sip-icon'),
+              grpc: document.getElementById('grpc-icon'),
+              speaker: document.getElementById('speaker-icon'),
+              flowStatus: this.getFlowStatus()
+            };
+            
+            // Check if we got all required elements
+            const allElements = [
+              ...Object.values(this.arrows),
+              ...Object.values(this.packets),
+              ...Object.values(this.components)
+            ];
+            
+            if (allElements.some(el => !el)) {
+              console.warn("Some animation elements not found");
+            } else {
+              this.initialized = true;
+            }
+          } catch (error) {
+            console.error("Error initializing protocol animation:", error);
+            this.initialized = false;
+          }
+          
+          // Define the animation sequence
+          this.arrowSequence = [
+            { arrow: this.arrows.clientToSip, direction: 'forward', color: '#ff5722' },
+            { arrow: this.arrows.sipToGrpc, direction: 'forward', color: '#ff5722' },
+            { arrow: this.arrows.grpcToSip, direction: 'backward', color: '#00bcd4' },
+            { arrow: this.arrows.sipToClient, direction: 'backward', color: '#00bcd4' }
+          ];
+          
+          this.packetSequence = [
+            { packet: this.packets.packet1, show: true },
+            { packet: this.packets.packet1, show: false, delay: 300 },
+            { packet: this.packets.packet2, show: true },
+            { packet: this.packets.packet2, show: false, delay: 300 },
+            { packet: this.packets.packet3, show: true },
+            { packet: this.packets.packet3, show: false, delay: 300 },
+            { packet: this.packets.packet4, show: true },
+            { packet: this.packets.packet4, show: false, delay: 300 }
+          ];
+          
+          // Set up component animations
+          this.componentAnimations = {
+            pulse: (element) => {
+              element.style.transform = 'scale(1.3)';
+              element.style.transition = 'transform 0.3s ease-in-out';
+              setTimeout(() => {
+                element.style.transform = 'scale(1)';
+              }, 300);
+            }
+          };
+        },
+        
+        // Start the animation
+        start() {
+          if (this.active) return;
+          
+          // Check if initialized
+          if (!this.initialized) {
+            console.warn("Animation not initialized, trying to initialize now");
+            try {
+              this.init();
+            } catch (error) {
+              console.error("Failed to initialize animation:", error);
+              return; // Can't start without initialization
+            }
+          }
+          
+          try {
+            // Use safe getter for flowStatus
+            const flowStatus = this.getFlowStatus();
+            flowStatus.style.display = 'none';
+            
+            // Show all arrows with error handling
+            Object.values(this.arrows).forEach(arrow => {
+              if (arrow) {
+                arrow.style.display = 'block';
+                arrow.style.backgroundColor = '#aaa';
+                
+                const arrowTip = arrow.querySelector('div');
+                if (arrowTip) {
+                  arrowTip.style.borderLeftColor = '#aaa';
+                }
+              }
+            });
+            
+            // Set up animation
+            this.active = true;
+            this.currentStep = 0;
+            this.startTime = Date.now();
+            
+            // Run the animation loop
+            this.animationInterval = setInterval(() => this.update(), 1500);
+            this.update();
+          } catch (error) {
+            console.error("Error starting animation:", error);
+            this.active = false; // Reset active state
+          }
+        },
+        
+        // Stop the animation
+        stop() {
+          if (!this.active) return;
+          
+          try {
+            // Clear interval
+            if (this.animationInterval) {
+              clearInterval(this.animationInterval);
+              this.animationInterval = null;
+            }
+            this.active = false;
+            
+            // Hide all packets with error handling
+            if (this.packets) {
+              Object.values(this.packets).forEach(packet => {
+                if (packet) {
+                  packet.style.display = 'none';
+                }
+              });
+            }
+            
+            // Reset all arrows with error handling
+            if (this.arrows) {
+              Object.values(this.arrows).forEach(arrow => {
+                if (arrow) {
+                  arrow.style.backgroundColor = '#aaa';
+                  const arrowTip = arrow.querySelector('div');
+                  if (arrowTip) {
+                    arrowTip.style.borderLeftColor = '#aaa';
+                  }
+                  arrow.style.display = 'none';
+                }
+              });
+            }
+            
+            // Show the status message again
+            const flowStatus = this.getFlowStatus();
+            if (flowStatus) {
+              flowStatus.style.display = 'block';
+              flowStatus.textContent = 'Ready for audio transmission';
+              flowStatus.style.backgroundColor = 'rgba(255,255,255,0.9)';
+            }
+          } catch (error) {
+            console.error("Error stopping animation:", error);
+          }
+        },
+        
+        // Update the animation with error handling
+        update() {
+          if (!this.active) return;
+          
+          try {
+            // Check if all necessary elements are available
+            if (!this.arrows || !this.packets || !this.components || !this.arrowSequence) {
+              console.warn("Animation elements not fully initialized");
+              return;
+            }
+            
+            const elapsed = Date.now() - this.startTime;
+            const step = this.currentStep % 4;
+            
+            // Get flow status safely
+            const flowStatus = this.getFlowStatus();
+            
+            // Highlight the current step in the sequence with error handling
+            Object.keys(this.arrows).forEach((key, i) => {
+              const arrow = this.arrows[key];
+              if (!arrow) return; // Skip if element doesn't exist
+              
+              if (i === step) {
+                // Get config safely
+                const config = this.arrowSequence[i] || { color: '#ff5722' };
+                arrow.style.backgroundColor = config.color;
+                
+                const arrowTip = arrow.querySelector('div');
+                if (arrowTip) {
+                  arrowTip.style.borderLeftColor = config.color;
+                }
+                
+                // Animate the appropriate component based on the step
+                try {
+                  switch(step) {
+                    case 0:
+                      if (this.components.mic && this.componentAnimations) {
+                        this.componentAnimations.pulse(this.components.mic);
+                      }
+                      flowStatus.textContent = 'Audio to SIP...';
+                      flowStatus.style.display = 'block';
+                      break;
+                    case 1:
+                      if (this.components.sip && this.componentAnimations) {
+                        this.componentAnimations.pulse(this.components.sip);
+                      }
+                      flowStatus.textContent = 'SIP to gRPC...';
+                      break;
+                    case 2:
+                      if (this.components.grpc && this.componentAnimations) {
+                        this.componentAnimations.pulse(this.components.grpc);
+                      }
+                      flowStatus.textContent = 'gRPC to SIP...';
+                      break;
+                    case 3:
+                      if (this.components.speaker && this.componentAnimations) {
+                        this.componentAnimations.pulse(this.components.speaker);
+                      }
+                      flowStatus.textContent = 'SIP to Client...';
+                      break;
+                  }
+                  
+                  // Show and animate the packet safely
+                  const packetKey = 'packet' + (step + 1);
+                  if (this.packets[packetKey]) {
+                    this.packets[packetKey].style.display = 'block';
+                  }
+                  
+                  // Hide previous packet safely
+                  if (step > 0) {
+                    const prevPacketKey = 'packet' + step;
+                    if (this.packets[prevPacketKey]) {
+                      this.packets[prevPacketKey].style.display = 'none';
+                    }
+                  } else if (step === 0 && this.packets.packet4) {
+                    this.packets.packet4.style.display = 'none';
+                  }
+                } catch (animError) {
+                  console.warn("Animation step error:", animError);
+                }
+              } else {
+                // Set inactive appearance
+                arrow.style.backgroundColor = '#ddd';
+                const arrowTip = arrow.querySelector('div');
+                if (arrowTip) {
+                  arrowTip.style.borderLeftColor = '#ddd';
+                }
+              }
+            });
+            
+            // Increment step
+            this.currentStep++;
+          } catch (error) {
+            console.error("Animation update error:", error);
+            // Try to safely stop the animation if there's an error
+            try {
+              this.stop();
+            } catch (stopError) {
+              console.error("Failed to stop animation after error:", stopError);
+            }
+          }
+        }
+      };
+      
+      // Function to start audio recording
+      async function startRecording() {
+        try {
+          // Reset error display
+          document.getElementById('error-container').innerHTML = '';
+          
+          // Reset collections
+          audioChunks = [];
+          loopbackAudio = [];
+          
+          // Set UI state before starting
+          audioStatus.textContent = 'Requesting microphone access...';
+          
+          // Start the protocol animation with error handling
+          try {
+            if (protocolAnimation && typeof protocolAnimation.start === 'function') {
+              protocolAnimation.start();
+            } else {
+              console.warn("Protocol animation not fully initialized, trying again");
+              // Try to reinitialize if needed
+              if (!protocolAnimation.initialized) {
+                try {
+                  protocolAnimation.init();
+                  protocolAnimation.start();
+                } catch (initError) {
+                  console.error("Could not initialize protocol animation:", initError);
+                }
+              }
+            }
+          } catch (animError) {
+            console.warn("Protocol animation error:", animError);
+            // Continue without animation
+          }
+          
+          // Check if browser supports getUserMedia
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('Your browser does not support audio recording. Please try Chrome, Firefox, or Safari.');
+          }
+          
+          // Show notification about microphone permissions
+          const permNotification = document.createElement('div');
+          permNotification.className = 'permission-notification';
+          permNotification.innerHTML = `
+            <strong>Microphone Access Required</strong>
+            <p>Please allow microphone access in the browser prompt that appears.</p>
+            <div style="font-size: 2em; margin: 5px 0;">🎤</div>
+          `;
+          document.body.appendChild(permNotification);
+          
+          // Remove notification after 6 seconds or when permission is granted
+          setTimeout(() => {
+            if (document.body.contains(permNotification)) {
+              document.body.removeChild(permNotification);
+            }
+          }, 6000);
+          
+          // Explain permissions to user
+          audioStatus.textContent = 'Please allow microphone access when prompted...';
+          
+          try {
+            // First check if we need to request permissions
+            const permissionStatus = await navigator.permissions.query({ name: 'microphone' }).catch(e => null);
+            
+            if (permissionStatus && permissionStatus.state === 'denied') {
+              if (document.body.contains(permNotification)) {
+                document.body.removeChild(permNotification);
+              }
+              throw new Error('Microphone permission denied. Please allow access in your browser settings.');
+            }
+          } catch (permError) {
+            // Ignore errors from permissions API as it might not be supported in all browsers
+            console.log('Permission check skipped:', permError);
+          }
+          
+          // Request microphone access with specific constraints for better compatibility
+          const constraints = {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          };
+          
+          try {
+            // Add a slight delay to ensure browser shows the permission prompt
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Remove permission notification if still present
+            const permNotification = document.querySelector('.permission-notification');
+            if (permNotification) {
+              document.body.removeChild(permNotification);
+            }
+            
+            audioStatus.textContent = 'Microphone connected, initializing audio...';
+          } catch (micError) {
+            // Remove permission notification if still present
+            const permNotification = document.querySelector('.permission-notification');
+            if (permNotification) {
+              document.body.removeChild(permNotification);
+            }
+            
+            // Provide specific error messages based on error type
+            if (micError.name === 'NotAllowedError' || micError.name === 'PermissionDeniedError') {
+              throw new Error('Microphone access was denied. Please allow access in your browser settings and reload the page.');
+            } else if (micError.name === 'NotFoundError' || micError.name === 'DevicesNotFoundError') {
+              throw new Error('No microphone detected. Please connect a microphone and try again.');
+            } else {
+              throw micError; // Re-throw other errors
+            }
+          }
+          
+          // Set up audio context and analyzer
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaStreamSource(mediaStream);
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 2048;
+          source.connect(analyser);
+          
+          // Set up data array for visualization
+          dataArray = new Uint8Array(analyser.frequencyBinCount);
+          
+          // Start visualization
+          drawVisualizer();
+          
+          // Set up media recorder with specific MIME type
+          const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+              ? 'audio/webm' 
+              : 'audio/mp4';
+              
+          mediaRecorder = new MediaRecorder(mediaStream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000
+          });
+          
+          // Handle data available event
+          mediaRecorder.ondataavailable = async (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+              
+              // Convert blob to base64
+              const reader = new FileReader();
+              reader.readAsDataURL(event.data);
+              reader.onloadend = async () => {
+                const base64data = reader.result.split(',')[1];
+                
+                // Send to server for loopback
+                try {
+                  // Show status while processing
+                  if (audioChunks.length === 1) {
+                    audioStatus.textContent = 'Recording and streaming audio...';
+                  }
+                  
+                  // Add timeout and retry logic
+                  const streamAudio = async (retryCount = 0) => {
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/stream-audio`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          audio: base64data,
+                          trace_id: activeTraceId
+                        })
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.audio) {
+                          // Store loopback audio
+                          try {
+                            const binaryString = atob(data.audio);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let i = 0; i < binaryString.length; i++) {
+                              bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            const audioBlob = new Blob([bytes], { type: mediaRecorder.mimeType });
+                            loopbackAudio.push(audioBlob);
+                          } catch (parseError) {
+                            console.warn('Error parsing audio data:', parseError);
+                          }
+                        }
+                        
+                        // Update tracing state if needed
+                        if (data.trace_id) {
+                          if (!activeTraceId) {
+                            activeTraceId = data.trace_id;
+                          }
+                          latestTraceId = data.trace_id;
+                          updateTraceStatus();
+                        }
+                      } else {
+                        throw new Error(`Server returned status ${response.status}`);
+                      }
+                    } catch (fetchError) {
+                      if (retryCount < 2) {
+                        console.warn(`Retrying audio stream (${retryCount + 1}/2)...`);
+                        // Wait a bit and retry
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        return streamAudio(retryCount + 1);
+                      }
+                      throw fetchError;
+                    }
+                  };
+                  
+                  await streamAudio();
+                } catch (error) {
+                  console.error('Error sending audio to server:', error);
+                  // Don't update status if we've already stopped
+                  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    audioStatus.textContent = 'Error: Failed to communicate with server';
+                  }
+                }
+              };
+            }
+          };
+          
+          // Start recording
+          mediaRecorder.start(500); // Capture in 500ms chunks for streaming
+          audioStatus.textContent = 'Recording... Press Stop when finished';
+          speakBtn.disabled = true;
+          stopBtn.disabled = false;
+          speakBtn.classList.add('recording');
+        } catch (error) {
+          console.error('Error starting recording:', error);
+          
+          // Display meaningful error to user
+          const errorMsg = error.message || 'Microphone access denied or unavailable';
+          audioStatus.textContent = 'Error: ' + errorMsg;
+          
+          // Show a more visible error message
+          document.getElementById('error-container').innerHTML = `
+            <div class="error-message">
+              <strong>Microphone Error:</strong> ${errorMsg}
+              <div style="margin-top: 10px; font-size: 0.9rem;">
+                <p>To fix this issue:</p>
+                <ol style="margin-top: 5px; padding-left: 20px;">
+                  <li>Check that your browser allows microphone access for this site</li>
+                  <li>Make sure you have a working microphone connected</li>
+                  <li>Try reloading the page</li>
+                  <li>Consider using Chrome or Firefox</li>
+                </ol>
+              </div>
+            </div>
+          `;
+          
+          protocolAnimation.stop();
+        }
+      }
+      
+      // Function to stop recording
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+        
+        // Stop visualization
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+        
+        // Stop microphone stream
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Clean up audio context
+        if (audioContext) {
+          audioContext.close();
+        }
+        
+        // Reset UI
+        audioStatus.textContent = 'Processing audio...';
+        speakBtn.disabled = false;
+        stopBtn.disabled = true;
+        speakBtn.classList.remove('recording');
+        
+        // Play back loopback audio after a small delay
+        setTimeout(() => {
+          if (loopbackAudio.length > 0) {
+            try {
+              // Get the MIME type from the recorder or use audio/webm as default
+              const mimeType = mediaRecorder ? mediaRecorder.mimeType : 'audio/webm';
+              const loopbackBlob = new Blob(loopbackAudio, { type: mimeType });
+              
+              // Simple sanity check to avoid empty blobs
+              if (loopbackBlob.size < 100) {
+                throw new Error('Audio data is too small to be valid');
+              }
+              
+              // Create URL for the audio blob
+              const url = URL.createObjectURL(loopbackBlob);
+              
+              // Create a new audio player each time to avoid state issues
+              audioPlayer = new Audio();
+              audioPlayer.src = url;
+              
+              // Set up event handlers
+              audioStatus.textContent = 'Preparing audio playback...';
+              
+              audioPlayer.oncanplay = () => {
+                audioStatus.textContent = 'Playing loopback audio...';
+                audioPlayer.play().catch(playError => {
+                  console.error('Error playing audio:', playError);
+                  audioStatus.textContent = 'Error: Failed to play audio';
+                });
+              };
+              
+              audioPlayer.onended = () => {
+                audioStatus.textContent = 'Ready to speak';
+                URL.revokeObjectURL(url);
+                
+                // Stop the protocol flow animation when audio playback is complete
+                protocolAnimation.stop();
+              };
+              
+              audioPlayer.onerror = (e) => {
+                console.error('Audio playback error:', e);
+                audioStatus.textContent = 'Error: Audio playback failed';
+                URL.revokeObjectURL(url);
+                protocolAnimation.stop();
+              };
+              
+              // Set a timeout to make sure it doesn't hang indefinitely
+              setTimeout(() => {
+                if (audioStatus.textContent === 'Preparing audio playback...') {
+                  audioStatus.textContent = 'Ready to speak';
+                  URL.revokeObjectURL(url);
+                  protocolAnimation.stop();
+                }
+              }, 5000);
+            } catch (e) {
+              console.error('Error setting up audio playback:', e);
+              audioStatus.textContent = 'Error: Could not prepare audio for playback';
+              protocolAnimation.stop();
+            }
+          } else {
+            audioStatus.textContent = 'No audio received from server';
+            protocolAnimation.stop();
+          }
+        }, 800); // Give more time for processing
+      }
+      
+      // Event listeners
+      speakBtn.addEventListener('click', startRecording);
+      stopBtn.addEventListener('click', stopRecording);
+    }
+    
+    // Setup tracing functionality
+    function setupTracingFunctionality() {
+      const traceStartBtn = document.getElementById('trace-start-btn');
+      const traceStopBtn = document.getElementById('trace-stop-btn');
+      const traceDownloadBtn = document.getElementById('trace-download-btn');
+      const traceStatus = document.getElementById('trace-status');
+      const traceInfo = document.getElementById('trace-info');
+      
+      // Check the current tracing status on load
+      checkTraceStatus();
+      
+      // Start a new trace
+      async function startTrace() {
+        try {
+          traceStatus.textContent = 'Starting trace...';
+          
+          // Add a connection test first to ensure we have connectivity
+          try {
+            const statusCheck = await fetch(`${API_BASE_URL}/status`);
+            if (!statusCheck.ok) {
+              throw new Error(`Server status check failed: ${statusCheck.status}`);
+            }
+            console.log('Server connection confirmed');
+          } catch (connError) {
+            console.error('Server connection test failed:', connError);
+            traceStatus.textContent = 'Error: Cannot connect to server';
+            return;
+          }
+          
+          const response = await fetch(`${API_BASE_URL}/trace/start`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              // Add a flag to request verbose protocol logging
+              verbose_logging: true,
+              client_timestamp: new Date().toISOString()
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Trace start response:', data); // Add debugging
+            if (data.trace_id) {
+              activeTraceId = data.trace_id;
+              latestTraceId = data.trace_id;
+              updateTraceStatus();
+              
+              // Make an additional call to enable verbose console output
+              fetch(`${API_BASE_URL}/stream-audio`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  audio: "TRACE_LOGGING_TEST",
+                  trace_id: data.trace_id,
+                  enable_verbose: true
+                })
+              }).catch(e => console.warn('Trace logging test error:', e));
+              
+              traceStatus.textContent = 'Trace active - capturing SIP/gRPC packets';
+              traceStartBtn.disabled = true;
+              traceStopBtn.disabled = false;
+            } else {
+              console.error('Missing trace_id in response:', data);
+              traceStatus.textContent = 'Error: Server returned invalid response';
+            }
+          } else {
+            const errorText = await response.text();
+            console.error('Server error response:', errorText);
+            traceStatus.textContent = 'Failed to start trace';
+          }
+        } catch (error) {
+          console.error('Error starting trace:', error);
+          traceStatus.textContent = 'Error: Failed to start trace';
+        }
+      }
+      
+      // Stop the current trace
+      async function stopTrace() {
+        try {
+          traceStatus.textContent = 'Stopping trace...';
+          
+          const response = await fetch(`${API_BASE_URL}/trace/stop`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              trace_id: activeTraceId
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.trace_info) {
+              const { packet_count, duration, file_path } = data.trace_info;
+              
+              latestTraceId = activeTraceId;
+              activeTraceId = null;
+              updateTraceStatus();
+              
+              traceStatus.textContent = `Trace completed - ${packet_count} packets captured`;
+              traceStartBtn.disabled = false;
+              traceStopBtn.disabled = true;
+              traceDownloadBtn.disabled = false;
+              
+              // Add trace info
+              traceInfo.innerHTML = `
+                <p>Last trace: ${packet_count} packets over ${duration.toFixed(2)}s</p>
+                <p>The PCAP file can be opened in Wireshark to analyze the SIP⟷gRPC protocol flow.</p>
+              `;
+            }
+          } else {
+            traceStatus.textContent = 'Failed to stop trace';
+          }
+        } catch (error) {
+          console.error('Error stopping trace:', error);
+          traceStatus.textContent = 'Error: Failed to stop trace';
+        }
+      }
+      
+      // Download the latest trace
+      function downloadTrace() {
+        if (latestTraceId) {
+          const downloadUrl = `${API_BASE_URL}/trace/download/${latestTraceId}`;
+          window.open(downloadUrl, '_blank');
+        }
+      }
+      
+      // Check the current trace status
+      async function checkTraceStatus() {
+        try {
+          const response = await fetch(`${API_BASE_URL}/trace/status`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.tracing_active && data.active_trace) {
+              activeTraceId = data.active_trace.id;
+              latestTraceId = data.active_trace.id;
+              updateTraceStatus();
+            }
+          }
+        } catch (error) {
+          console.error('Error checking trace status:', error);
+        }
+      }
+      
+      // Update the trace status UI
+      function updateTraceStatus() {
+        if (activeTraceId) {
+          traceStatus.textContent = 'Trace active - capturing SIP/gRPC packets';
+          traceStartBtn.disabled = true;
+          traceStopBtn.disabled = false;
+        } else {
+          if (latestTraceId) {
+            traceStatus.textContent = 'No active trace - previous trace available for download';
+            traceDownloadBtn.disabled = false;
+          } else {
+            traceStatus.textContent = 'No active trace';
+          }
+          traceStartBtn.disabled = false;
+          traceStopBtn.disabled = true;
+        }
+      }
+      
+      // Event listeners
+      traceStartBtn.addEventListener('click', startTrace);
+      traceStopBtn.addEventListener('click', stopTrace);
+      traceDownloadBtn.addEventListener('click', downloadTrace);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIP to gRPC Gateway</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    header {
+      background-color: #2196f3;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+    }
+    .panel {
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      margin-right: 0.5rem;
+    }
+    .success {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #2e7d32;
+    }
+    .error {
+      background-color: #ffebee;
+      color: #c62828;
+      border: 1px solid #c62828;
+    }
+    button {
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+    button:disabled {
+      background-color: #b0b0b0;
+      cursor: not-allowed;
+    }
+    button.recording {
+      background-color: #f44336;
+    }
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 200px;
+    }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #2196f3;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error-message {
+      background-color: #ffebee;
+      color: #c62828;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+    .grid-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .stats {
+      text-align: center;
+    }
+    .stats h3 {
+      margin-bottom: 0.5rem;
+      color: #666;
+    }
+    .stats .number {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #2196f3;
+    }
+    .stats .details {
+      color: #666;
+      font-size: 0.9rem;
+    }
+    .audio-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .audio-status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .visualizer {
+      width: 100%;
+      height: 60px;
+      margin-top: 0.5rem;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .visualizer-canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SIP to gRPC Gateway</h1>
+    <button onclick="fetchDashboardData()">Refresh</button>
+  </header>
+
+  <div class="container">
+    <div id="error-container"></div>
+    
+    <div id="loading" class="loading">
+      <div class="loader"></div>
+    </div>
+    
+    <div id="dashboard-content" style="display: none;">
+      <h2>Dashboard</h2>
+      
+      <div class="card-grid">
+        <!-- Gateway Status Card -->
+        <div class="card">
+          <h2>Gateway Status</h2>
+          <div id="gateway-status"></div>
+          <div style="margin-top: 1rem;">
+            <button disabled id="gateway-toggle-btn">Stop Gateway</button>
+          </div>
+        </div>
+        
+        <!-- SIP Server Card -->
+        <div class="card">
+          <h2>SIP Server</h2>
+          <div id="sip-details"></div>
+        </div>
+        
+        <!-- gRPC Client Card -->
+        <div class="card">
+          <h2>gRPC Client</h2>
+          <div id="grpc-status"></div>
+        </div>
+        
+        <!-- Audio Card -->
+        <div class="card">
+          <h2>Voice Communication</h2>
+          <div id="audio-status" class="audio-status">Ready to speak</div>
+          <div class="visualizer">
+            <canvas id="audio-visualizer" class="visualizer-canvas"></canvas>
+          </div>
+          <div class="audio-controls">
+            <button id="speak-btn">Press to Speak</button>
+            <button id="stop-btn" disabled>Stop</button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <h2>Configuration Summary</h2>
+        <hr>
+        <div class="grid-row">
+          <div class="stats">
+            <h3>Endpoints</h3>
+            <div id="endpoints-count" class="number">0</div>
+            <div id="endpoints-list" class="details">None configured</div>
+          </div>
+          
+          <div class="stats">
+            <h3>SIP to gRPC Mappings</h3>
+            <div id="sip-grpc-count" class="number">0</div>
+          </div>
+          
+          <div class="stats">
+            <h3>gRPC to SIP Mappings</h3>
+            <div id="grpc-sip-count" class="number">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API Base URL - adjust this to point to your backend
+    const API_BASE_URL = window.location.origin;
+    
+    // Function to fetch dashboard data
+    async function fetchDashboardData() {
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('dashboard-content').style.display = 'none';
+      document.getElementById('error-container').innerHTML = '';
+      
+      try {
+        // Fetch status
+        const statusResponse = await fetch(`${API_BASE_URL}/status`);
+        if (!statusResponse.ok) {
+          throw new Error(`API error: ${statusResponse.status}`);
+        }
+        const status = await statusResponse.json();
+        
+        // Fetch config
+        const configResponse = await fetch(`${API_BASE_URL}/config`);
+        if (!configResponse.ok) {
+          throw new Error(`API error: ${configResponse.status}`);
+        }
+        const config = await configResponse.json();
+        
+        // Update the UI
+        updateDashboard(status, config);
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = 'block';
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error-container').innerHTML = `
+          <div class="error-message">
+            Failed to load gateway status. Please ensure the backend is running at ${API_BASE_URL}.<br>
+            Error: ${error.message}
+          </div>
+        `;
+      }
+    }
+    
+    // Function to update the dashboard UI
+    function updateDashboard(status, config) {
+      // Gateway status
+      const gatewayStatusEl = document.getElementById('gateway-status');
+      if (status.running) {
+        gatewayStatusEl.innerHTML = '<span class="chip success">✓ Running</span>';
+        document.getElementById('gateway-toggle-btn').textContent = 'Stop Gateway';
+      } else {
+        gatewayStatusEl.innerHTML = '<span class="chip error">✗ Stopped</span>';
+        document.getElementById('gateway-toggle-btn').textContent = 'Start Gateway';
+      }
+      
+      // SIP Server details
+      const sipDetailsEl = document.getElementById('sip-details');
+      sipDetailsEl.innerHTML = `
+        <div>Host: ${status.sip_server.host || 'N/A'}</div>
+        <div>Port: ${status.sip_server.port || 'N/A'}</div>
+        <div style="margin-top: 0.5rem;">
+          ${status.sip_server.udp_enabled ? '<span class="chip success">UDP</span>' : '<span class="chip">UDP</span>'}
+          ${status.sip_server.tcp_enabled ? '<span class="chip success">TCP</span>' : '<span class="chip">TCP</span>'}
+        </div>
+      `;
+      
+      // gRPC Client status
+      const grpcStatusEl = document.getElementById('grpc-status');
+      if (status.grpc_client.connected) {
+        grpcStatusEl.innerHTML = '<span class="chip success">✓ Connected</span>';
+      } else {
+        grpcStatusEl.innerHTML = '<span class="chip error">✗ Disconnected</span>';
+      }
+      
+      // Configuration summary
+      const endpoints = config.grpc?.endpoints || [];
+      document.getElementById('endpoints-count').textContent = endpoints.length;
+      document.getElementById('endpoints-list').textContent = 
+        endpoints.length > 0 ? endpoints.map(e => e.name).join(', ') : 'None configured';
+      
+      const sipMappings = Object.keys(config.mapping?.sip_to_grpc || {}).length;
+      document.getElementById('sip-grpc-count').textContent = sipMappings;
+      
+      const grpcMappings = Object.keys(config.mapping?.grpc_to_sip || {}).length;
+      document.getElementById('grpc-sip-count').textContent = grpcMappings;
+    }
+    
+    // Audio functionality
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchDashboardData();
+      setupAudioFunctionality();
+    });
+    
+    function setupAudioFunctionality() {
+      const speakBtn = document.getElementById('speak-btn');
+      const stopBtn = document.getElementById('stop-btn');
+      const audioStatus = document.getElementById('audio-status');
+      const visualizer = document.getElementById('audio-visualizer');
+      const visualizerCtx = visualizer.getContext('2d');
+      
+      // Set canvas size
+      visualizer.width = visualizer.offsetWidth;
+      visualizer.height = visualizer.offsetHeight;
+      
+      // Audio contexts and streams
+      let audioContext;
+      let mediaStream;
+      let mediaRecorder;
+      let audioChunks = [];
+      let loopbackAudio = [];
+      let audioPlayer = new Audio();
+      let analyser;
+      let dataArray;
+      let animationFrameId;
+      
+      // Draw the visualizer
+      function drawVisualizer() {
+        animationFrameId = requestAnimationFrame(drawVisualizer);
+        
+        if (analyser) {
+          analyser.getByteTimeDomainData(dataArray);
+          
+          visualizerCtx.fillStyle = 'rgb(245, 245, 245)';
+          visualizerCtx.fillRect(0, 0, visualizer.width, visualizer.height);
+          
+          visualizerCtx.lineWidth = 2;
+          visualizerCtx.strokeStyle = 'rgb(33, 150, 243)';
+          visualizerCtx.beginPath();
+          
+          const sliceWidth = visualizer.width / dataArray.length;
+          let x = 0;
+          
+          for (let i = 0; i < dataArray.length; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = v * visualizer.height / 2;
+            
+            if (i === 0) {
+              visualizerCtx.moveTo(x, y);
+            } else {
+              visualizerCtx.lineTo(x, y);
+            }
+            
+            x += sliceWidth;
+          }
+          
+          visualizerCtx.lineTo(visualizer.width, visualizer.height / 2);
+          visualizerCtx.stroke();
+        }
+      }
+      
+      // Function to start audio recording
+      async function startRecording() {
+        try {
+          // Request microphone access
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          // Set up audio context and analyzer
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaStreamSource(mediaStream);
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 2048;
+          source.connect(analyser);
+          
+          // Set up data array for visualization
+          dataArray = new Uint8Array(analyser.frequencyBinCount);
+          
+          // Start visualization
+          drawVisualizer();
+          
+          // Set up media recorder
+          mediaRecorder = new MediaRecorder(mediaStream);
+          audioChunks = [];
+          loopbackAudio = [];
+          
+          // Handle data available event
+          mediaRecorder.ondataavailable = async (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+              
+              // Convert blob to base64
+              const reader = new FileReader();
+              reader.readAsDataURL(event.data);
+              reader.onloadend = async () => {
+                const base64data = reader.result.split(',')[1];
+                
+                // Send to server for loopback
+                try {
+                  const response = await fetch(`${API_BASE_URL}/stream-audio`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      audio: base64data
+                    })
+                  });
+                  
+                  if (response.ok) {
+                    const data = await response.json();
+                    if (data.audio) {
+                      // Store loopback audio
+                      const binaryString = atob(data.audio);
+                      const bytes = new Uint8Array(binaryString.length);
+                      for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                      }
+                      loopbackAudio.push(new Blob([bytes], { type: 'audio/webm' }));
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error sending audio to server:', error);
+                  audioStatus.textContent = 'Error: Failed to communicate with server';
+                }
+              };
+            }
+          };
+          
+          // Start recording
+          mediaRecorder.start(500); // Capture in 500ms chunks for streaming
+          audioStatus.textContent = 'Recording... Press Stop when finished';
+          speakBtn.disabled = true;
+          stopBtn.disabled = false;
+          speakBtn.classList.add('recording');
+        } catch (error) {
+          console.error('Error starting recording:', error);
+          audioStatus.textContent = 'Error: Microphone access denied or unavailable';
+        }
+      }
+      
+      // Function to stop recording
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+        
+        // Stop visualization
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+        
+        // Stop microphone stream
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Clean up audio context
+        if (audioContext) {
+          audioContext.close();
+        }
+        
+        // Reset UI
+        audioStatus.textContent = 'Processing audio...';
+        speakBtn.disabled = false;
+        stopBtn.disabled = true;
+        speakBtn.classList.remove('recording');
+        
+        // Play back loopback audio after a small delay
+        setTimeout(() => {
+          if (loopbackAudio.length > 0) {
+            const loopbackBlob = new Blob(loopbackAudio, { type: 'audio/webm' });
+            const url = URL.createObjectURL(loopbackBlob);
+            
+            audioPlayer.src = url;
+            audioPlayer.onloadedmetadata = () => {
+              audioStatus.textContent = 'Playing loopback audio...';
+              audioPlayer.play();
+            };
+            audioPlayer.onended = () => {
+              audioStatus.textContent = 'Ready to speak';
+              URL.revokeObjectURL(url);
+            };
+          } else {
+            audioStatus.textContent = 'No audio received from server';
+          }
+        }, 500);
+      }
+      
+      // Event listeners
+      speakBtn.addEventListener('click', startRecording);
+      stopBtn.addEventListener('click', stopRecording);
+    }
+  </script>
+</body>
+</html>

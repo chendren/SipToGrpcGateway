@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package example;
+
+service Example {
+  rpc Call(CallRequest) returns (CallResponse) {}
+  rpc Register(RegisterRequest) returns (RegisterResponse) {}
+  rpc EndCall(EndCallRequest) returns (EndCallResponse) {}
+  rpc SendMessage(MessageRequest) returns (MessageResponse) {}
+  rpc Process(ProcessRequest) returns (ProcessResponse) {}
+}
+
+message CallRequest {
+  string caller = 1;
+  string callee = 2;
+  string call_id = 3;
+}
+
+message CallResponse {
+  string call_id = 1;
+  string status = 2;
+  string service = 3;
+  string host = 4;
+  int32 port = 5;
+}
+
+message RegisterRequest {
+  string user = 1;
+  string expires = 2;
+}
+
+message RegisterResponse {
+  string expires = 1;
+  string status = 2;
+}
+
+message EndCallRequest {
+  string call_id = 1;
+}
+
+message EndCallResponse {
+  string status = 1;
+}
+
+message MessageRequest {
+  string from = 1;
+  string to = 2;
+  string content = 3;
+}
+
+message MessageResponse {
+  string status = 1;
+}
+
+message ProcessRequest {
+  string method = 1;
+  string uri = 2;
+  map<string, string> headers = 3;
+}
+
+message ProcessResponse {
+  string result = 1;
+  string message = 2;
+}
